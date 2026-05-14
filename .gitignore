@@ -1,0 +1,13 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.vercel
+
+# Heavy media — keep in object storage / CDN; copy into public/assets locally or in CI for deploy
+public/assets/**
+!public/assets/README.md
