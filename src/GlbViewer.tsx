@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 
 export type GlbAttachment = {
   id: string;
@@ -48,13 +49,13 @@ function disposeObject(obj: THREE.Object3D) {
   });
 }
 
-export default function GlbViewer({
-  modelPath = '/assets/BP-51C.glb',
+const GlbViewer = forwardRef(function GlbViewer({
+  modelPath = '/assets/BP-51C-compressed.glb',
   modelScale = 0.7,
   attachments = [],
   className = '',
   autoRotate = false
-}: GlbViewerProps) {
+}: GlbViewerProps, ref: any) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const attachmentObjectsRef = useRef<Map<string, THREE.Object3D>>(new Map());
   const fitViewRef = useRef<(() => void) | null>(null);
@@ -67,6 +68,7 @@ export default function GlbViewer({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const assemblyGroupRef = useRef<THREE.Group | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   // Unique key for attachments to avoid unnecessary work
   const attachmentLoadKey = useMemo(
@@ -240,6 +242,14 @@ export default function GlbViewer({
     const ensureAttachment = async (attachment: GlbAttachment) => {
       if (disposed) return;
       const existing = attachmentObjectsRef.current.get(attachment.id);
+      if (!attachment.enabled) {
+        if (existing) {
+          try { assemblyGroup.remove(existing); disposeObject(existing); } catch (e) {}
+          attachmentObjectsRef.current.delete(attachment.id);
+        }
+        return;
+      }
+
       if (existing) {
         const existingPath = (existing.userData && existing.userData._path) || '';
         if (existingPath === attachment.path) {
@@ -286,12 +296,14 @@ export default function GlbViewer({
       controls.update();
       renderer.render(scene, camera);
       animationFrame = window.requestAnimationFrame(render);
+      rafRef.current = animationFrame;
     };
     render();
 
     return () => {
       disposed = true;
-      window.cancelAnimationFrame(animationFrame);
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
       fitViewRef.current = null;
       resizeObserver.disconnect();
       try { controls.dispose(); } catch (e) {}
@@ -362,6 +374,14 @@ export default function GlbViewer({
     (async () => {
       await Promise.all(attachments.map(async (a) => {
         const existing = attachmentObjectsRef.current.get(a.id);
+        if (!a.enabled) {
+          if (existing) {
+            try { assemblyGroupRef.current!.remove(existing); disposeObject(existing); } catch (e) {}
+            attachmentObjectsRef.current.delete(a.id);
+          }
+          return;
+        }
+
         if (existing) {
           const existingPath = (existing.userData && existing.userData._path) || '';
           if (existingPath === a.path) {
@@ -419,6 +439,44 @@ export default function GlbViewer({
     fitViewRef.current?.();
   }, [attachments]);
 
+  // expose exportGLB via ref: exports the already-loaded assembled model to avoid
+  // reloading very large GLBs on memory-constrained mobile browsers.
+  useImperativeHandle(ref, () => ({
+    exportGLB: async () => {
+      const exporter = new GLTFExporter();
+      const assembly = assemblyGroupRef.current;
+      if (!assembly || !mainDeviceRef.current) return null;
+      const enabledAttachmentsReady = attachments.every((attachment) => {
+        return !attachment.enabled || attachmentObjectsRef.current.has(attachment.id);
+      });
+      if (!enabledAttachmentsReady) return null;
+
+      try {
+        const tempScene = new THREE.Group();
+        const clone = assembly.clone(true);
+        clone.traverse((child) => {
+          child.visible = child.visible !== false;
+        });
+        tempScene.add(clone);
+
+        const arrayBuffer = await new Promise<ArrayBuffer | null>((resolve) => {
+          exporter.parse(
+            tempScene,
+            (res) => { if (res instanceof ArrayBuffer) resolve(res); else resolve(null); },
+            { binary: true }
+          );
+        });
+
+        if (!arrayBuffer) return null;
+        const blob = new Blob([arrayBuffer], { type: 'model/gltf-binary' });
+        const url = URL.createObjectURL(blob);
+        return url;
+      } catch (e) {
+        return null;
+      }
+    }
+  }));
+
   return (
     <div ref={hostRef} className={`relative h-full w-full overflow-hidden ${className}`}>
       {status === 'loading' && (
@@ -433,4 +491,6 @@ export default function GlbViewer({
       )}
     </div>
   );
-}
+});
+
+export default GlbViewer;

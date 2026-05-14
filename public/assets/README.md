@@ -1,7 +1,6 @@
-# Assets (not in Git)
-
-This folder is **ignored by Git** except for this file. Large binaries (`.glb`, `.obj`, images, accessories) should live in **external storage** (S3, Azure Blob, CDN, etc.).
-
-**Local development:** copy or download your media here so paths like `/assets/...` used in the app resolve correctly.
-
-**Production:** either upload `public/assets` during deploy from your storage pipeline, or change the app to load model/image URLs from your CDN base URL.
+# Put your images here.
+# Files should be:
+# - industrial_multi_function_printer_base_unit.png
+# - finisher_attachment.png
+# - side_paper_tray.png
+# - large_capacity_base_tray.png

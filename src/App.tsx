@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Printer, 
@@ -23,6 +23,7 @@ import About from './About';
 import Catalog from './Catalog';
 import ProductDetail from './ProductDetail';
 import GlbViewer from './GlbViewer';
+import ARModal from './ARModal';
 import type { GlbAttachment } from './GlbViewer';
 
 const BP51_FINISHER_OPTIONS = [
@@ -269,6 +270,8 @@ interface Product {
 
 type ProductConfig = {
   modelName: string;
+  modelGlb: string;
+  iosUsdz: string;
   assets: {
     base: string;
     finisher: string;
@@ -282,6 +285,8 @@ type ProductConfig = {
 const PRODUCT_CONFIGS: Record<string, ProductConfig> = {
   'bp-51c': {
     modelName: 'Sharp BP-51C65',
+    modelGlb: '/assets/BP-51C-compressed.glb',
+    iosUsdz: '/assets/BP-51C-ios.usdz',
     assets: {
       base: '/assets/BP-51C_MFP.png',
       finisher: '/assets/BP-51C_Finisher.png',
@@ -293,6 +298,8 @@ const PRODUCT_CONFIGS: Record<string, ProductConfig> = {
   },
   'bp-61c': {
     modelName: 'Sharp BP-61C',
+    modelGlb: '/assets/BP-51C-compressed.glb',
+    iosUsdz: '/assets/BP-51C-ios.usdz',
     assets: {
       base: '/assets/bp-61c.png',
       finisher: '/assets/BP-51C_Finisher.png',
@@ -304,6 +311,8 @@ const PRODUCT_CONFIGS: Record<string, ProductConfig> = {
   },
   'bp-71c': {
     modelName: 'Sharp BP-71C',
+    modelGlb: '/assets/BP-51C-compressed.glb',
+    iosUsdz: '/assets/BP-51C-ios.usdz',
     assets: {
       base: '/assets/BP_71/BP-71_catalog.png',
       finisher: '/assets/BP_71/BP_71_finisher/03-PROImg_BP-71C-61C-56C-51C-Series_EPS-Option-BP-FN13 copy.png',
@@ -347,6 +356,9 @@ function ConfigScreen({
   const [trayExpanded, setTrayExpanded] = useState(false);
   const [finisherExpanded, setFinisherExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<'assembly' | '3d'>('assembly');
+  const glbViewerRef = useRef<any>(null);
+  const [arModelUrl, setArModelUrl] = useState<string | null>(null);
+  const [arStatus, setArStatus] = useState<'idle' | 'preparing' | 'error'>('idle');
 
   const productConfig = PRODUCT_CONFIGS[product.id] ?? PRODUCT_CONFIGS['bp-51c'];
   const selectedFinisherOption = productConfig.finisherOptions.find(option => option.id === selectedFinisher) ?? productConfig.finisherOptions[0];
@@ -467,6 +479,25 @@ function ConfigScreen({
               >
                 3D View
               </button>
+              <button
+                type="button"
+                data-view-toggle="true"
+                disabled={arStatus === 'preparing'}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setArStatus('idle');
+                  setArModelUrl(new URL(productConfig.modelGlb, window.location.href).toString());
+                }}
+                className={`px-2 py-1 text-xs rounded border ${arStatus === 'preparing' ? 'border-slate-200 text-slate-400' : 'border-slate-200 text-slate-600'}`}
+              >
+                {arStatus === 'preparing' ? 'Preparing' : 'AR View'}
+              </button>
+              {arStatus === 'error' && (
+                <span className="text-[10px] font-bold uppercase tracking-tight text-amber-600">
+                  Open 3D view first
+                </span>
+              )}
             </div>
             {/* Measurement Hairlines */}
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[120%] border-t border-slate-200 flex justify-between px-2 pt-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest pointer-events-none">
@@ -477,7 +508,7 @@ function ConfigScreen({
             {/* 3D Model Assembly */}
             {viewMode === '3d' ? (
               <div className="relative w-full h-full flex items-center justify-center">
-                <GlbViewer attachments={glbAttachments} className="h-full w-full" />
+                <GlbViewer ref={glbViewerRef} attachments={glbAttachments} className="h-full w-full" />
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/55 text-white text-[10px] uppercase tracking-[0.15em] px-3 py-1">
                   Drag to rotate, scroll to zoom
                 </div>
@@ -660,6 +691,14 @@ function ConfigScreen({
           </div>
         </aside>
       </main>
+      {arModelUrl && (
+        <ARModal
+          modelUrl={arModelUrl}
+          iosSrc={new URL(productConfig.iosUsdz, window.location.href).toString()}
+          note={finisherActive || extraTray || trayActive ? 'Native AR uses the base GLB; configured assemblies need a hosted exported GLB/USDZ.' : undefined}
+          onClose={() => setArModelUrl(null)}
+        />
+      )}
       {/* Footer */}
       <footer id="main-footer" className="shrink-0 bg-slate-50 border-t border-slate-200 flex flex-col md:flex-row justify-between items-center px-12 py-8 gap-6">
         <div className="flex flex-col gap-1">
